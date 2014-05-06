@@ -18,7 +18,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 {- |
    Module      : Text.Rundoc
    Copyright   : Copyright © 2014 Albert Krewinkel
-   License     : GNU GPL, version 3 or above
+   License     : GNU AGPL, version 3 or above
 
    Maintainer  : Albert Krewinkel <tarleb@moltkeplatz.de>
 

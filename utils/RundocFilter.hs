@@ -17,7 +17,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 {- |
    Copyright   : Copyright © 2014 Albert Krewinkel
-   License     : GNU GPL, version 3 or above
+   License     : GNU AGPL, version 3 or above
 
 Eval code in Pandoc code blocks and re-insert the results.
 -}
