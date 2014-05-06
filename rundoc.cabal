@@ -1,0 +1,40 @@
+name:                rundoc
+version:             0.1.0.0
+synopsis:            An Org-babel like library for Pandoc documents.
+license:             AGPL-3
+license-file:        LICENSE
+author:              Albert Krewinkel
+maintainer:          tarleb@moltkeplatz.de
+copyright:           © 2014 Albert Krewinkel
+category:            Text
+build-type:          Simple
+cabal-version:       >= 1.10
+description:         Rundoc is a library to run code from specifically
+                     marked Pandoc code blocks.
+
+-- extra-source-files:
+
+source-repository head
+  type:              git
+  location:          git://github.com/tarleb/rundoc
+
+library
+  build-depends:     base             >= 4.2     && < 5,
+                     data-default     >= 0.5     && < 0.6,
+                     pandoc           >= 1.12.4  && < 1.13,
+                     pandoc-types     >= 1.12.3  && < 1.13,
+                     process          >= 1.1     && < 1.2
+  default-language:  Haskell2010
+  ghc-options:       -rtsopts -Wall -fno-warn-unused-do-bind
+  hs-source-dirs:    src
+
+  exposed-modules:   Text.Rundoc
+
+
+executable rundoc
+  main-is:           RundocFilter.hs
+  hs-source-dirs:    utils
+  build-depends:     base             >= 4.6     && < 5,
+                     pandoc-types     >= 1.12.3  && < 1.13,
+                     rundoc           >= 0.1     && < 0.2
+  default-language:  Haskell2010
