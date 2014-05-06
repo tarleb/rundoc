@@ -12,7 +12,7 @@ cabal-version:       >= 1.10
 description:         Rundoc is a library to run code from specifically
                      marked Pandoc code blocks.
 
--- extra-source-files:
+data-files:          README.md
 
 source-repository head
   type:              git
