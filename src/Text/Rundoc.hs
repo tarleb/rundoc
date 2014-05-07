@@ -17,10 +17,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 {- |
    Module      : Text.Rundoc
-   Copyright   : Copyright © 2014 Albert Krewinkel
+   Copyright   : © 2014 Albert Krewinkel <tarleb@moltkeplatz.de>
    License     : GNU AGPL, version 3 or above
-
-   Maintainer  : Albert Krewinkel <tarleb@moltkeplatz.de>
 
 Evaluate code in Rundoc code blocks and re-insert the results.
 -}
@@ -31,9 +29,9 @@ module Text.Rundoc ( rundoc
 
 import           System.IO (hClose, hGetContents)
 import           System.Process ( StdStream( CreatePipe )
-                                , createProcess, shell, std_out)
+                                , createProcess, proc, shell, std_out)
 
-import           Text.Pandoc (Attr, Inline(..))
+import           Text.Pandoc (Attr, Inline( Code, Str ))
 
 import           Control.Applicative ((<$>), (<$))
 import           Data.Default (Default(..))
@@ -44,7 +42,7 @@ import           Data.Monoid (mempty)
 -- otherwise return the argument unaltered.
 rundoc :: Inline -> IO Inline
 rundoc x@(Code attr code) | isRundocBlock x = evalCodeBlock attr code
-rundoc x                                        = return x
+rundoc x                                    = return x
 
 isRundocBlock :: Inline -> Bool
 isRundocBlock (Code (_,cls,_) _) = rundocBlockClass `elem` cls
@@ -54,12 +52,9 @@ isRundocBlock _                  = False
 rundocPrefix :: String
 rundocPrefix = "rundoc-"
 
-rundocPrefixed :: String -> String
-rundocPrefixed = (++) rundocPrefix
-
 -- | Class-name used to mark rundoc blocks.
 rundocBlockClass :: String
-rundocBlockClass = rundocPrefixed "block"
+rundocBlockClass = rundocPrefix ++ "block"
 
 isRundocOption :: (String, String) -> Bool
 isRundocOption (key, _) = rundocPrefix `isPrefixOf` key
@@ -88,8 +83,9 @@ parseOption opts ("results",  x) = opts { rundocResultType = parseResult   x }
 parseOption opts _               = opts
 
 parseLanguage :: String -> Language
-parseLanguage "sh" = Shell
-parseLanguage x    = UnknownLanguage x
+parseLanguage "sh"      = Shell
+parseLanguage "haskell" = Haskell
+parseLanguage x         = UnknownLanguage x
 
 parseExport :: String -> RundocExports
 parseExport "result" = ExportResult
@@ -107,7 +103,9 @@ evalCodeBlock :: Attr               -- ^ Block attributes
               -> String             -- ^ Code to evaluate
               -> IO Inline          -- ^ Resulting inline
 evalCodeBlock (id',cls,opts) code =
-  Code (id', cls', opts') <$> (fmap (resultString mOpts) evalRes)
+  if (Silent == rundocResultType mOpts)
+  then return $ Str ""
+  else Code (id', cls', opts') <$> (fmap (resultString mOpts) evalRes)
  where cls'  = filter (/= rundocBlockClass) cls
        opts' = filter (not . isRundocOption) opts
        mOpts = rundocOptions opts
@@ -145,13 +143,15 @@ instance Default RundocExports where
   def = ExportResult
 
 data Language = Shell
+              | Haskell
               | UnknownLanguage String
                 deriving (Eq, Show)
 
 -- newtype CodeString = CodeString (String
 
 evalCodeForLang :: Language -> String -> IO Result
-evalCodeForLang Shell code = runShellCode code
+evalCodeForLang Shell   code = runShellCode code
+evalCodeForLang Haskell code = runHaskellCode code
 evalCodeForLang (UnknownLanguage lang) code =
   let unknownLang = "UNKNOWN LANGUAGE: " ++ lang
   in return Result { resultOutput = unknownLang
@@ -162,6 +162,16 @@ evalCodeForLang (UnknownLanguage lang) code =
 runShellCode :: String -> IO Result
 runShellCode cmd = do
   (_, Just hout, _, _) <- createProcess (shell cmd){ std_out = CreatePipe }
+  output <- hGetContents hout
+  output `seq` Result { resultOutput = output
+                      , resultValue  = ""
+                      , resultCode   = cmd
+                      } <$ hClose hout
+
+runHaskellCode :: String -> IO Result
+runHaskellCode cmd = do
+  let procParam = (proc "ghc" ["-e", cmd]){ std_out = CreatePipe }
+  (_, Just hout, _, _) <- createProcess procParam
   output <- hGetContents hout
   output `seq` Result { resultOutput = output
                       , resultValue  = ""
