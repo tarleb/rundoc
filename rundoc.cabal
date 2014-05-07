@@ -1,5 +1,5 @@
 name:                rundoc
-version:             0.1.0.0
+version:             0.2.0.0
 synopsis:            An Org-babel like library for Pandoc documents.
 license:             AGPL-3
 license-file:        LICENSE
@@ -19,22 +19,24 @@ source-repository head
   location:          git://github.com/tarleb/rundoc
 
 library
-  build-depends:     base             >= 4.2     && < 5,
-                     data-default     >= 0.5     && < 0.6,
-                     pandoc           >= 1.12.4  && < 1.13,
-                     pandoc-types     >= 1.12.3  && < 1.13,
-                     process          >= 1.1     && < 1.2
+  build-depends:       base             >= 4.6     && < 5
+                     , bifunctors       == 4.1.*
+                     , data-default     >= 0.5     && < 0.6
+                     , pandoc           >= 1.12.4  && < 1.13
+                     , pandoc-types     >= 1.12.3  && < 1.13
+                     , process          >= 1.1     && < 1.2
   default-language:  Haskell2010
   ghc-options:       -rtsopts -Wall -fno-warn-unused-do-bind
   hs-source-dirs:    src
 
-  exposed-modules:   Text.Rundoc
-
+  exposed-modules:     Text.Rundoc
+                     , Metropolis.Types
+                     , Metropolis.Worker
 
 executable rundoc
   main-is:           RundocFilter.hs
   hs-source-dirs:    utils
-  build-depends:     base             >= 4.6     && < 5,
-                     pandoc-types     >= 1.12.3  && < 1.13,
-                     rundoc           >= 0.1     && < 0.2
+  build-depends:       base             >= 4.6     && < 5
+                     , pandoc-types     >= 1.12.3  && < 1.13
+                     , rundoc           == 0.2.*
   default-language:  Haskell2010

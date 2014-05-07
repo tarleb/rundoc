@@ -24,16 +24,15 @@ Evaluate code in Rundoc code blocks and re-insert the results.
 -}
 module Text.Rundoc ( rundoc
                    , rundocBlockClass
-                   , runShellCode
                    ) where
 
-import           System.IO (hClose, hGetContents)
-import           System.Process ( StdStream( CreatePipe )
-                                , createProcess, proc, shell, std_out)
+import           Metropolis.Types (MetropolisResult(..), Language(..))
+import           Metropolis.Worker (runCommand)
 
 import           Text.Pandoc (Attr, Inline( Code, Str ))
 
-import           Control.Applicative ((<$>), (<$))
+import           Control.Applicative ((<$>))
+import           Data.Bifunctor (bimap)
 import           Data.Default (Default(..))
 import           Data.List (foldl', isPrefixOf)
 import           Data.Monoid (mempty)
@@ -59,13 +58,10 @@ rundocBlockClass = rundocPrefix ++ "block"
 isRundocOption :: (String, String) -> Bool
 isRundocOption (key, _) = rundocPrefix `isPrefixOf` key
 
-rundocOptions :: [(String, String)] -> RundocOptions
-rundocOptions = foldl' parseOption def . map rmPrefix . filter isRundocOption
- where rmPrefix (k,v) = (drop (length rundocPrefix) k, v)
-
+-- Options
 data RundocOptions = RundocOptions
   { rundocLanguage   :: Language
-  , rundocResultType :: ResultType
+  , rundocResultType :: RundocResultType
   , rundocExports    :: RundocExports
   } deriving (Eq, Show)
 
@@ -75,6 +71,23 @@ instance Default RundocOptions where
         , rundocResultType = Replace
         , rundocExports    = ExportResult
         }
+
+data RundocResultType = Replace
+                      | Silent
+                        deriving (Eq, Show)
+
+data RundocExports = ExportCode
+                   | ExportResult
+                   | ExportBoth
+                   | ExportNone
+                     deriving (Eq, Show)
+
+instance Default RundocExports where
+  def = ExportResult
+
+rundocOptions :: [(String, String)] -> RundocOptions
+rundocOptions = foldl' parseOption def . map rmPrefix . filter isRundocOption
+ where rmPrefix (k,v) = (drop (length rundocPrefix) k, v)
 
 parseOption :: RundocOptions -> (String, String) -> RundocOptions
 parseOption opts ("language", x) = opts { rundocLanguage   = parseLanguage x }
@@ -94,86 +107,36 @@ parseExport "code"   = ExportCode
 parseExport "both"   = ExportBoth
 parseExport _        = ExportNone
 
-parseResult :: String -> ResultType
+parseResult :: String -> RundocResultType
 parseResult "silent" = Silent
 parseResult _        = Replace
 
 -- | Evaluate a code block.
-evalCodeBlock :: Attr               -- ^ Block attributes
+evalCodeBlock :: Attr               -- ^ Old block attributes
               -> String             -- ^ Code to evaluate
               -> IO Inline          -- ^ Resulting inline
-evalCodeBlock (id',cls,opts) code =
-  if (Silent == rundocResultType mOpts)
-  then return $ Str ""
-  else Code (id', cls', opts') <$> (fmap (resultString mOpts) evalRes)
- where cls'  = filter (/= rundocBlockClass) cls
-       opts' = filter (not . isRundocOption) opts
-       mOpts = rundocOptions opts
-       evalRes = evalCode mOpts code
+evalCodeBlock attr@(_,_,opts) code =
+  let attr'  = stripRundocAttrs attr
+      rdOpts = rundocOptions opts
+  in
+    if (Silent == rundocResultType rdOpts)
+    then return $ Str ""
+    else Code attr' <$> (fmap (resultString rdOpts) $ evalCode rdOpts code)
 
-resultString :: RundocOptions -> Result -> String
-resultString RundocOptions{ rundocExports = ExportCode   } = resultCode
-resultString RundocOptions{ rundocExports = ExportResult } = resultOutput
-resultString RundocOptions{ rundocExports = ExportBoth   } = const mempty
-resultString RundocOptions{ rundocExports = ExportNone   } = const mempty
+stripRundocAttrs :: Attr -> Attr
+stripRundocAttrs = bimap (filter (/= rundocBlockClass))
+                         (filter (not . isRundocOption))
+
+resultString :: RundocOptions -> MetropolisResult -> String
+resultString opts =
+  case rundocExports opts of
+    ExportCode   -> metropolisResultCode
+    ExportResult -> metropolisResultOutput
+    ExportBoth   -> metropolisResultCode     -- FIXME: not implemented yet
+    ExportNone   -> const mempty
 
 evalCode :: RundocOptions
          -> String
-         -> IO Result
+         -> IO MetropolisResult
 evalCode opts code = do
-  evalCodeForLang (rundocLanguage opts) code
-
-data Result = Result
-  { resultOutput :: String
-  , resultValue  :: String
-  , resultCode   :: String
-  } deriving (Eq, Show)
-
-data ResultType = Replace
-                | Silent
-                  deriving (Eq, Show)
-
-data RundocExports = ExportCode
-                   | ExportResult
-                   | ExportBoth
-                   | ExportNone
-                     deriving (Eq, Show)
-
-instance Default RundocExports where
-  def = ExportResult
-
-data Language = Shell
-              | Haskell
-              | UnknownLanguage String
-                deriving (Eq, Show)
-
--- newtype CodeString = CodeString (String
-
-evalCodeForLang :: Language -> String -> IO Result
-evalCodeForLang Shell   code = runShellCode code
-evalCodeForLang Haskell code = runHaskellCode code
-evalCodeForLang (UnknownLanguage lang) code =
-  let unknownLang = "UNKNOWN LANGUAGE: " ++ lang
-  in return Result { resultOutput = unknownLang
-                   , resultValue  = unknownLang
-                   , resultCode   = code
-                   }
-
-runShellCode :: String -> IO Result
-runShellCode cmd = do
-  (_, Just hout, _, _) <- createProcess (shell cmd){ std_out = CreatePipe }
-  output <- hGetContents hout
-  output `seq` Result { resultOutput = output
-                      , resultValue  = ""
-                      , resultCode   = cmd
-                      } <$ hClose hout
-
-runHaskellCode :: String -> IO Result
-runHaskellCode cmd = do
-  let procParam = (proc "ghc" ["-e", cmd]){ std_out = CreatePipe }
-  (_, Just hout, _, _) <- createProcess procParam
-  output <- hGetContents hout
-  output `seq` Result { resultOutput = output
-                      , resultValue  = ""
-                      , resultCode   = cmd
-                      } <$ hClose hout
+  runCommand (rundocLanguage opts) code
