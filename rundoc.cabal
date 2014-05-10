@@ -4,7 +4,7 @@ synopsis:            An Org-babel like library for Pandoc documents.
 license:             AGPL-3
 license-file:        LICENSE
 author:              Albert Krewinkel
-maintainer:          tarleb@moltkeplatz.de
+maintainer:          Albert Krewinkel <tarleb+rundoc@moltkeplatz.de>
 copyright:           © 2014 Albert Krewinkel
 category:            Text
 build-type:          Simple
@@ -19,24 +19,46 @@ source-repository head
   location:          git://github.com/tarleb/rundoc
 
 library
-  build-depends:       base             >= 4.6     && < 5
-                     , bifunctors       == 4.1.*
-                     , data-default     >= 0.5     && < 0.6
-                     , pandoc           >= 1.12.4  && < 1.13
-                     , pandoc-types     >= 1.12.3  && < 1.13
-                     , process          >= 1.1     && < 1.2
+  build-depends:
+      base              >= 4.6     && < 5
+    , bifunctors        == 4.1.*
+    , data-default      == 0.5.*
+    , pandoc            >= 1.12.4  && < 1.13
+    , pandoc-types      >= 1.12.3  && < 1.13
+    , process           == 1.1.*
+
   default-language:  Haskell2010
   ghc-options:       -rtsopts -Wall -fno-warn-unused-do-bind
   hs-source-dirs:    src
 
-  exposed-modules:     Text.Rundoc
-                     , Metropolis.Types
-                     , Metropolis.Worker
+  exposed-modules:
+      Text.Rundoc
+    , Metropolis.Types
+    , Metropolis.Worker
+
+test-suite rundoc-tests
+  type:              exitcode-stdio-1.0
+  default-language:  Haskell2010
+  ghc-options:       -Wall
+  main-is:           rundoc-tests.hs
+  hs-source-dirs:    tests
+  other-modules:
+    Metropolis.Worker.Tests
+
+  build-depends:
+      base
+    , rundoc
+    , HUnit             == 1.2.*
+    , QuickCheck        == 2.7.*
+    , tasty             == 0.8.*
+    , tasty-hunit       == 0.8.*
+    , tasty-quickcheck  == 0.8.*
 
 executable rundoc
   main-is:           RundocFilter.hs
   hs-source-dirs:    utils
-  build-depends:       base             >= 4.6     && < 5
-                     , pandoc-types     >= 1.12.3  && < 1.13
-                     , rundoc           == 0.2.*
   default-language:  Haskell2010
+  build-depends:
+      base              >= 4.6     && < 5
+    , pandoc-types      >= 1.12.3  && < 1.13
+    , rundoc            == 0.2.*
