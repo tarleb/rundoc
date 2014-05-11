@@ -24,16 +24,61 @@ Types for Metropolis, a library for universal code execution.
 -}
 module Metropolis.Types ( Language(..)
                         , MetropolisResult(..)
+                        , MetropolisParameter(..)
+                        , Worker(..)
+                        , CodeString
+                        , ExitCode(..)
+                        , Default(def)
+                        , emptyResult
                         ) where
+
+import           System.Exit ( ExitCode(..) )
+
+import           Data.Default (Default(def))
+import           Data.Monoid (mempty)
+
+type CodeString = String
+
+-- | Metropolis parameters
+data MetropolisParameter =
+  MetropolisParameter
+  { parameterVariables :: [(String, String)]
+  , parameterOutfile   :: Maybe FilePath
+  , parameterLanguage  :: Language
+  } deriving (Eq, Show)
+
+instance Default MetropolisParameter where
+  def = MetropolisParameter
+        { parameterVariables = []
+        , parameterOutfile   = Nothing
+        , parameterLanguage  = UnknownLanguage "unspecified"
+        }
 
 -- | Results of a computation.
 data MetropolisResult = MetropolisResult
-  { metropolisResultOutput :: String
-  , metropolisResultValue  :: String
-  , metropolisResultCode   :: String
+  { resultOutput   :: String
+  , resultError    :: String
+  , resultFile     :: Maybe FilePath
+  , resultExitCode :: ExitCode
+  , resultSource   :: String
   } deriving (Eq, Show)
 
-data Language = Shell
-              | Haskell
+emptyResult :: MetropolisResult
+emptyResult =
+  MetropolisResult
+  { resultOutput   = mempty
+  , resultError    = mempty
+  , resultFile     = mempty
+  , resultExitCode = ExitSuccess
+  , resultSource   = mempty
+  }
+
+data Language = Haskell
+              | Shell
               | UnknownLanguage String
-                deriving (Eq, Show)
+                deriving (Eq, Ord, Show)
+
+newtype Worker = Worker { unWorker :: MetropolisParameter
+                                   -> String
+                                   -> MetropolisResult
+                        }

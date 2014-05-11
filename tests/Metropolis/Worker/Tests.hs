@@ -20,10 +20,8 @@ module Metropolis.Worker.Tests ( tests ) where
 import           Test.Tasty
 import           Test.Tasty.HUnit
 
-import           Metropolis.Types (MetropolisResult(..))
+import           Metropolis.Types
 import           Metropolis.Worker
-
-import           Control.Applicative ((<$>))
 
 tests :: TestTree
 tests = testGroup "Worker Tests" [ shellWorkerTests ]
@@ -31,6 +29,24 @@ tests = testGroup "Worker Tests" [ shellWorkerTests ]
 shellWorkerTests :: TestTree
 shellWorkerTests = testGroup "Shell Worker"
   [ testCase "Basic Shell output" $
-      let res = MetropolisResult "Hello" "" "printf Hello"
-      in ((== res) <$> runShellCommand "printf Hello") @? "shell command failed"
+      let res = emptyResult{ resultOutput = "Hello"
+                           , resultSource = "printf Hello"
+                           }
+      in fmap (== res) (runCode def{ parameterLanguage = Shell } "printf Hello")
+           @? "wrong printf result"
+
+  , testCase "Haskell interpreter" $
+      let ref = emptyResult{ resultOutput = "42\n"
+                           , resultSource = "print (42::Int)"
+                           }
+          res = runCode def{ parameterLanguage = Haskell } "print (42::Int)"
+          resetErr r = r{ resultError = "" }
+      in fmap (== ref) (fmap resetErr res)
+           @? "Haskell results differ"
+
+  , testCase "Run unknown language" $
+      let (lang, code) = (UnknownLanguage "unknown", "foo")
+      in fmap (== cannotRunLanguageResult code)
+              (runCode def{ parameterLanguage = lang } code)
+           @? "wrong fallback"
   ]

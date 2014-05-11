@@ -23,29 +23,44 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 Evaluate code in Rundoc code blocks and re-insert the results.
 -}
 module Text.Rundoc ( rundoc
+                   , runBlocks
+                   , runInlineCode
                    , rundocBlockClass
                    ) where
 
-import           Metropolis.Types (MetropolisResult(..), Language(..))
-import           Metropolis.Worker (runCommand)
+import           Metropolis.Types ( MetropolisResult(..)
+                                  , MetropolisParameter(..)
+                                  , Language(..) )
+import           Metropolis.Worker (runCode)
 
-import           Text.Pandoc (Attr, Inline( Code, Str ))
+import           Text.Pandoc ( Attr, Inline( Code, Space, Span )
+                             , Block ( Para, CodeBlock, Null, Div )
+                             , nullAttr )
+import           Text.Pandoc.Builder (Inlines, Blocks)
+import qualified Text.Pandoc.Builder as B
 
 import           Control.Applicative ((<$>))
 import           Data.Bifunctor (bimap)
 import           Data.Default (Default(..))
 import           Data.List (foldl', isPrefixOf)
-import           Data.Monoid (mempty)
+import           Data.Maybe (fromMaybe)
+import           Data.Monoid (mconcat, mempty)
 
 -- | Run code and return the result if a rundoc code block is supplied;
 -- otherwise return the argument unaltered.
 rundoc :: Inline -> IO Inline
-rundoc x@(Code attr code) | isRundocBlock x = evalCodeBlock attr code
+rundoc (Code attr code) | isRundocBlock attr = evalInlineCode attr code
 rundoc x                                    = return x
 
-isRundocBlock :: Inline -> Bool
-isRundocBlock (Code (_,cls,_) _) = rundocBlockClass `elem` cls
-isRundocBlock _                  = False
+runInlineCode :: Inline -> IO Inline
+runInlineCode = rundoc
+
+runBlocks :: Block -> IO Block
+runBlocks (CodeBlock attr code) | isRundocBlock attr = evalBlock attr code
+runBlocks x                                          = return x
+
+isRundocBlock :: Attr -> Bool
+isRundocBlock (_,cls,_) = rundocBlockClass `elem` cls
 
 -- | Prefix used for rundoc classes and parameters.
 rundocPrefix :: String
@@ -63,80 +78,148 @@ data RundocOptions = RundocOptions
   { rundocLanguage   :: Language
   , rundocResultType :: RundocResultType
   , rundocExports    :: RundocExports
+  , rundocOutfile    :: Maybe FilePath
   } deriving (Eq, Show)
 
 instance Default RundocOptions where
   def = RundocOptions
         { rundocLanguage   = UnknownLanguage ""
         , rundocResultType = Replace
-        , rundocExports    = ExportResult
+        , rundocExports    = [ExportSource]
+        , rundocOutfile    = Nothing
         }
+
+optionsToMetropolisParameters :: RundocOptions -> MetropolisParameter
+optionsToMetropolisParameters opts =
+  MetropolisParameter
+  { parameterVariables = []
+  , parameterOutfile   = rundocOutfile opts
+  , parameterLanguage  = rundocLanguage opts
+  }
 
 data RundocResultType = Replace
                       | Silent
                         deriving (Eq, Show)
 
-data RundocExports = ExportCode
-                   | ExportResult
-                   | ExportBoth
-                   | ExportNone
-                     deriving (Eq, Show)
+data Export = ExportSource
+            | ExportOutput
+            | ExportError
+            | ExportFile
+              deriving (Eq, Show)
 
-instance Default RundocExports where
-  def = ExportResult
+type RundocExports = [Export]
 
 rundocOptions :: [(String, String)] -> RundocOptions
 rundocOptions = foldl' parseOption def . map rmPrefix . filter isRundocOption
  where rmPrefix (k,v) = (drop (length rundocPrefix) k, v)
 
 parseOption :: RundocOptions -> (String, String) -> RundocOptions
-parseOption opts ("language", x) = opts { rundocLanguage   = parseLanguage x }
-parseOption opts ("exports",  x) = opts { rundocExports    = parseExport   x }
-parseOption opts ("results",  x) = opts { rundocResultType = parseResult   x }
-parseOption opts _               = opts
+parseOption opts (key, value) =
+  case key of
+   "language" -> opts{ rundocLanguage   = parseLanguage value }
+   "exports"  -> opts{ rundocExports    = parseExport   value }
+   "results"  -> opts{ rundocResultType = parseResult   value }
+   "file"     -> opts{ rundocOutfile    = Just value }
+   _          -> opts
 
 parseLanguage :: String -> Language
-parseLanguage "sh"      = Shell
-parseLanguage "haskell" = Haskell
-parseLanguage x         = UnknownLanguage x
+parseLanguage lang =
+  case lang of
+    "sh"      -> Shell
+    "haskell" -> Haskell
+    x         -> UnknownLanguage x
 
 parseExport :: String -> RundocExports
-parseExport "result" = ExportResult
-parseExport "output" = ExportResult
-parseExport "code"   = ExportCode
-parseExport "both"   = ExportBoth
-parseExport _        = ExportNone
+parseExport "result" = [ExportOutput]
+parseExport "output" = [ExportOutput]
+parseExport "code"   = [ExportSource]
+parseExport "both"   = [ExportSource, ExportOutput]
+parseExport "file"   = [ExportFile]
+parseExport _        = []
 
 parseResult :: String -> RundocResultType
 parseResult "silent" = Silent
 parseResult _        = Replace
 
 -- | Evaluate a code block.
-evalCodeBlock :: Attr               -- ^ Old block attributes
-              -> String             -- ^ Code to evaluate
-              -> IO Inline          -- ^ Resulting inline
-evalCodeBlock attr@(_,_,opts) code =
+evalInlineCode :: Attr               -- ^ Old block attributes
+               -> String             -- ^ Code to evaluate
+               -> IO Inline          -- ^ Resulting inline
+evalInlineCode attr@(_,_,opts) code =
   let attr'  = stripRundocAttrs attr
       rdOpts = rundocOptions opts
-  in
-    if (Silent == rundocResultType rdOpts)
-    then return $ Str ""
-    else Code attr' <$> (fmap (resultString rdOpts) $ evalCode rdOpts code)
+  in (setCodeAttr attr' . fromInlines . resultToInlines rdOpts)
+       <$> evalCode rdOpts code
+
+evalBlock :: Attr
+          -> String
+          -> IO Block
+evalBlock attr@(_,_,opts) code =
+  let attr'  = stripRundocAttrs attr
+      rdOpts = rundocOptions opts
+  in (setBlockCodeAttr attr' . fromBlocks . inlinesToBlocks . resultToInlines rdOpts)
+       <$> evalCode rdOpts code
+
+setCodeAttr :: Attr -> Inline -> Inline
+setCodeAttr attr x =
+  case x of
+   Code _ code -> Code attr code
+   _           -> x
+
+setBlockCodeAttr :: Attr -> Block -> Block
+setBlockCodeAttr attr x =
+  case x of
+   CodeBlock _ code -> CodeBlock attr code
+   _                -> x
 
 stripRundocAttrs :: Attr -> Attr
 stripRundocAttrs = bimap (filter (/= rundocBlockClass))
                          (filter (not . isRundocOption))
 
-resultString :: RundocOptions -> MetropolisResult -> String
-resultString opts =
-  case rundocExports opts of
-    ExportCode   -> metropolisResultCode
-    ExportResult -> metropolisResultOutput
-    ExportBoth   -> metropolisResultCode     -- FIXME: not implemented yet
-    ExportNone   -> const mempty
-
 evalCode :: RundocOptions
          -> String
          -> IO MetropolisResult
-evalCode opts code = do
-  runCommand (rundocLanguage opts) code
+evalCode opts = runCode (optionsToMetropolisParameters opts)
+
+resultToInlines :: RundocOptions -> MetropolisResult -> Inlines
+resultToInlines opts res =
+  if Silent == rundocResultType opts
+  then mempty
+  else mconcat . map (`exporter` res) $ rundocExports opts
+
+fromInlines :: Inlines -> Inline
+fromInlines inlines =
+  case B.toList inlines of
+    []     -> Space
+    (x:[]) -> x
+    xs     -> Span nullAttr xs
+
+inlinesToBlocks :: Inlines -> Blocks
+inlinesToBlocks = fmap inlineToBlock
+
+inlineToBlock :: Inline -> Block
+inlineToBlock = Para . (:[])
+
+fromBlocks :: Blocks -> Block
+fromBlocks blocks =
+  case B.toList blocks of
+    []     -> Null
+    (x:[]) -> x
+    xs     -> Div nullAttr xs
+
+exporter :: Export -> MetropolisResult -> Inlines
+exporter e =
+  case e of
+    ExportSource -> exportSource
+    ExportOutput -> exportOutput
+    ExportFile   -> exportFile
+    _            -> error "Not implemented yet"
+
+exportOutput :: MetropolisResult -> Inlines
+exportOutput = B.codeWith nullAttr .  resultOutput
+
+exportSource :: MetropolisResult -> Inlines
+exportSource = B.codeWith nullAttr . resultSource
+
+exportFile :: MetropolisResult -> Inlines
+exportFile = (\url -> B.image url "" mempty) . fromMaybe "" . resultFile

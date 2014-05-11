@@ -23,8 +23,9 @@ Eval code in Pandoc code blocks and re-insert the results.
 -}
 module Main where
 
-import           Text.Rundoc (rundoc)
+import           Text.Rundoc (runInlineCode, runBlocks)
 import           Text.Pandoc.JSON (toJSONFilter)
 
 main :: IO ()
-main = toJSONFilter rundoc
+main = toJSONFilter runBlocks
+  -- toJSONFilter runInlineCode

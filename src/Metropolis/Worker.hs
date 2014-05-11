@@ -22,45 +22,76 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 Run of different languages, producing a unified result type.
 -}
-module Metropolis.Worker ( runHaskellCommand
-                         , runShellCommand
-                         , runCommand
+module Metropolis.Worker ( runCode
+                         , cannotRunLanguageResult
                          ) where
 
 import           Metropolis.Types
-import           System.IO (hClose, hGetContents)
-import           System.Process ( StdStream( CreatePipe )
-                                , createProcess, proc, shell, std_out)
-import           Control.Applicative ((<$))
+import           System.Process ( readProcessWithExitCode )
+import           System.IO.Temp
+import           System.FilePath
 
-runCommand :: Language -> String -> IO MetropolisResult
-runCommand Shell                  = runShellCommand
-runCommand Haskell                = runHaskellCommand
-runCommand (UnknownLanguage lang) = runUnknownLanguageCommand lang
+import           Control.Applicative ((<$>), (<*>), pure)
+import           Control.Monad (mzero)
 
-runUnknownLanguageCommand :: String -> String -> IO MetropolisResult
-runUnknownLanguageCommand lang code =
-  let unknownLang = "UNKNOWN LANGUAGE: " ++ lang
-  in return MetropolisResult { metropolisResultOutput = unknownLang
-                   , metropolisResultValue  = unknownLang
-                   , metropolisResultCode   = code
-                   }
+import           Data.Map (Map)
+import qualified Data.Map as M
+import           Data.Maybe (fromMaybe)
 
-runShellCommand :: String -> IO MetropolisResult
-runShellCommand cmd = do
-  (_, Just hout, _, _) <- createProcess (shell cmd){ std_out = CreatePipe }
-  output <- hGetContents hout
-  output `seq` MetropolisResult { metropolisResultOutput = output
-                      , metropolisResultValue  = ""
-                      , metropolisResultCode   = cmd
-                      } <$ hClose hout
+runCode :: MetropolisParameter -> CodeString -> IO MetropolisResult
+runCode param cmd =
+  fromMaybe (return $ cannotRunLanguageResult cmd)
+            (interpretCommand param cmd)
 
-runHaskellCommand :: String -> IO MetropolisResult
-runHaskellCommand cmd = do
-  let procParam = (proc "ghc" ["-e", cmd]){ std_out = CreatePipe }
-  (_, Just hout, _, _) <- createProcess procParam
-  output <- hGetContents hout
-  output `seq` MetropolisResult { metropolisResultOutput = output
-                      , metropolisResultValue  = ""
-                      , metropolisResultCode   = cmd
-                      } <$ hClose hout
+interpretCommand :: MetropolisParameter
+                 -> CodeString
+                 -> Maybe (IO MetropolisResult)
+interpretCommand param cmd =
+  lookupWorker (parameterLanguage param) <*> pure param <*> pure cmd
+
+cannotRunLanguageResult :: CodeString -> MetropolisResult
+cannotRunLanguageResult code =
+  emptyResult{ resultSource = code }
+
+type MetropolisWorker = MetropolisParameter -> CodeString -> IO MetropolisResult
+
+lookupWorker :: Language -> Maybe MetropolisWorker
+lookupWorker lang = M.lookup lang interpreters
+
+interpreters :: Map Language MetropolisWorker
+interpreters = M.fromList
+  [ (Shell,   shellWorker)
+  , (Haskell, haskellWorker)
+  ]
+
+shellWorker :: MetropolisWorker
+shellWorker _ src =
+  setResultSource src <$> runCommand "sh" ["-c", src]
+
+haskellWorker :: MetropolisWorker
+haskellWorker _ src =
+  setResultSource src <$> runCommand "ghc" ["-e", src]
+
+setResultSource :: CodeString -> MetropolisResult -> MetropolisResult
+setResultSource src res = res{ resultSource = src }
+
+resultsFromProcess :: (ExitCode, String, String) -> MetropolisResult
+resultsFromProcess (exitCode, stdout, stderr) =
+  emptyResult{ resultOutput   = stdout
+             , resultError    = stderr
+             , resultExitCode = exitCode
+             }
+
+runCommand :: FilePath
+           -> [String]
+           -> IO MetropolisResult
+runCommand exec args = do
+  resultsFromProcess <$> readProcessWithExitCode exec args ""
+
+runCommandWithInput :: FilePath
+                    -> [String]
+                    -> String
+                    -> IO MetropolisResult
+runCommandWithInput exec args input = do
+  setResultSource input . resultsFromProcess
+                    <$> readProcessWithExitCode exec args input
