@@ -17,7 +17,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 {- |
    Module      : Text.Rundoc
-   Copyright   : © 2014 Albert Krewinkel <tarleb@moltkeplatz.de>
+   Copyright   : © 2014 Albert Krewinkel <tarleb+metropolis@moltkeplatz.de>
    License     : GNU AGPL, version 3 or above
 
 Evaluate code in Rundoc code blocks and re-insert the results.

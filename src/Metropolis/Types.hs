@@ -17,7 +17,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 {- |
    Module      : Metropolis.Types
-   Copyright   : © 2014 Albert Krewinkel <tarleb@moltkeplatz.de>
+   Copyright   : © 2014 Albert Krewinkel <tarleb+metropolis@moltkeplatz.de>
    License     : GNU AGPL, version 3 or above
 
 Types for Metropolis, a library for universal code execution.

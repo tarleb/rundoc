@@ -17,7 +17,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 {- |
    Module      : Metropolis.Languages
-   Copyright   : © 2014 Albert Krewinkel <tarleb@moltkeplatz.de>
+   Copyright   : © 2014 Albert Krewinkel <tarleb+metropolis@moltkeplatz.de>
    License     : GNU AGPL, version 3 or above
 
 Run of different languages, producing a unified result type.
