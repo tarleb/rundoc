@@ -79,7 +79,7 @@ setResultSource src res = res{ resultSource = src }
 
 rWorker :: MetropolisWorker
 rWorker _ src =
-  runCommandWithInput "R" ["--no-save"] src
+  runCommandWithInput "R" ["--vanilla", "--slave", "--no-readline"] src
 
 ditaaWorker :: MetropolisWorker
 ditaaWorker params src =
