@@ -73,7 +73,9 @@ emptyResult =
   , resultSource   = mempty
   }
 
-data Language = Haskell
+data Language = Ditaa
+              | Haskell
+              | R
               | Shell
               | UnknownLanguage String
                 deriving (Eq, Ord, Show)

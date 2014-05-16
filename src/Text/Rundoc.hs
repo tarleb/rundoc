@@ -127,6 +127,8 @@ parseLanguage lang =
   case lang of
     "sh"      -> Shell
     "haskell" -> Haskell
+    "ditaa"   -> Ditaa
+    "R"       -> R
     x         -> UnknownLanguage x
 
 parseExport :: String -> RundocExports

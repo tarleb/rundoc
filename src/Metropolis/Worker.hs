@@ -62,6 +62,8 @@ interpreters :: Map Language MetropolisWorker
 interpreters = M.fromList
   [ (Shell,   shellWorker)
   , (Haskell, haskellWorker)
+  , (Ditaa,   ditaaWorker)
+  , (R,       rWorker)
   ]
 
 shellWorker :: MetropolisWorker
@@ -74,6 +76,20 @@ haskellWorker _ src =
 
 setResultSource :: CodeString -> MetropolisResult -> MetropolisResult
 setResultSource src res = res{ resultSource = src }
+
+rWorker :: MetropolisWorker
+rWorker _ src =
+  runCommandWithInput "R" ["--no-save"] src
+
+ditaaWorker :: MetropolisWorker
+ditaaWorker params src =
+  flip (maybe mzero) (parameterOutfile params) $ \outfile ->
+    withSystemTempDirectory "rundocDitaa" $ \tmpdir -> do
+      let infile = tmpdir </> "rundoc-input.ditaa"
+      writeFile infile src
+      res <- runCommand "ditaa" [ infile, "-o", outfile ]
+      return $ setResultFile outfile res
+ where setResultFile file res = res{ resultFile = Just file }
 
 resultsFromProcess :: (ExitCode, String, String) -> MetropolisResult
 resultsFromProcess (exitCode, stdout, stderr) =
