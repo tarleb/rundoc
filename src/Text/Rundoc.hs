@@ -25,6 +25,7 @@ Evaluate code in Rundoc code blocks and re-insert the results.
 module Text.Rundoc ( rundoc
                    , runBlocks
                    , runInlineCode
+                   , runBlocksAndInlines
                    , rundocBlockClass
                    ) where
 
@@ -36,6 +37,7 @@ import           Metropolis.Worker (runCode)
 import           Text.Pandoc ( Attr, Inline( Code, Space, Span )
                              , Block ( Para, CodeBlock, Null, Div )
                              , nullAttr )
+import           Text.Pandoc.Walk (walkM)
 import           Text.Pandoc.Builder (Inlines, Blocks)
 import qualified Text.Pandoc.Builder as B
 
@@ -58,6 +60,9 @@ runInlineCode = rundoc
 runBlocks :: Block -> IO Block
 runBlocks (CodeBlock attr code) | isRundocBlock attr = evalBlock attr code
 runBlocks x                                          = return x
+
+runBlocksAndInlines :: Block -> IO Block
+runBlocksAndInlines x = runBlocks x >>= walkM runInlineCode
 
 isRundocBlock :: Attr -> Bool
 isRundocBlock (_,cls,_) = rundocBlockClass `elem` cls
