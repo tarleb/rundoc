@@ -25,7 +25,6 @@ Evaluate code in Rundoc code blocks and re-insert the results.
 module Text.Rundoc ( rundoc
                    , runBlocks
                    , runInlineCode
-                   , runBlocksAndInlines
                    , rundocBlockClass
                    ) where
 
@@ -50,22 +49,49 @@ import           Data.Monoid (mconcat, mempty)
 
 -- | Run code and return the result if a rundoc code block is supplied;
 -- otherwise return the argument unaltered.
-rundoc :: Inline -> IO Inline
-rundoc (Code attr code) | isRundocBlock attr = evalInlineCode attr code
-rundoc x                                    = return x
+rundoc :: Block -> IO Block
+rundoc x = runBlocks x >>= walkM runInlineCode
 
+-- | Run inline code blocks.
 runInlineCode :: Inline -> IO Inline
-runInlineCode = rundoc
+runInlineCode inline =
+  case inline of
+    (Code attr code) | isRundocBlock attr -> evalInlineCode attr code
+    _                                     -> return inline
+ where
+   evalInlineCode :: Attr               -- ^ Old block attributes
+                  -> String             -- ^ Code to evaluate
+                  -> IO Inline          -- ^ Resulting inline
+   evalInlineCode attr@(_,_,opts) code =
+     let attr'  = stripRundocAttrs attr
+         rdOpts = rundocOptions opts
+     in (setCodeAttr attr'
+         . singularizeInlines
+         . resultToInlines rdOpts)
+          <$> evalCode rdOpts code
 
+-- | Run code blocks.
 runBlocks :: Block -> IO Block
-runBlocks (CodeBlock attr code) | isRundocBlock attr = evalBlock attr code
-runBlocks x                                          = return x
-
-runBlocksAndInlines :: Block -> IO Block
-runBlocksAndInlines x = runBlocks x >>= walkM runInlineCode
+runBlocks block =
+  case block of
+    (CodeBlock attr code) | isRundocBlock attr -> evalBlock attr code
+    _                                          -> return block
+ where
+   evalBlock :: Attr -> String -> IO Block
+   evalBlock attr@(_,_,opts) code =
+     let attr'  = stripRundocAttrs attr
+         rdOpts = rundocOptions opts
+     in (setBlockCodeAttr attr'
+         . singularizeBlocks
+         . inlinesToBlocks
+         . resultToInlines rdOpts)
+          <$> evalCode rdOpts code
 
 isRundocBlock :: Attr -> Bool
 isRundocBlock (_,cls,_) = rundocBlockClass `elem` cls
+
+isRundocOption :: (String, String) -> Bool
+isRundocOption (key, _) = rundocPrefix `isPrefixOf` key
 
 -- | Prefix used for rundoc classes and parameters.
 rundocPrefix :: String
@@ -74,9 +100,6 @@ rundocPrefix = "rundoc-"
 -- | Class-name used to mark rundoc blocks.
 rundocBlockClass :: String
 rundocBlockClass = rundocPrefix ++ "block"
-
-isRundocOption :: (String, String) -> Bool
-isRundocOption (key, _) = rundocPrefix `isPrefixOf` key
 
 -- Options
 data RundocOptions = RundocOptions
@@ -137,35 +160,18 @@ parseLanguage lang =
     x         -> UnknownLanguage x
 
 parseExport :: String -> RundocExports
-parseExport "result" = [ExportOutput]
-parseExport "output" = [ExportOutput]
-parseExport "code"   = [ExportSource]
-parseExport "both"   = [ExportSource, ExportOutput]
-parseExport "file"   = [ExportFile]
-parseExport _        = []
+parseExport exportType =
+  case exportType of
+    "result"  -> [ExportOutput]
+    "output"  -> [ExportOutput]
+    "code"    -> [ExportSource]
+    "both"    -> [ExportSource, ExportOutput]
+    "file"    -> [ExportFile]
+    _         -> []
 
 parseResult :: String -> RundocResultType
 parseResult "silent" = Silent
 parseResult _        = Replace
-
--- | Evaluate a code block.
-evalInlineCode :: Attr               -- ^ Old block attributes
-               -> String             -- ^ Code to evaluate
-               -> IO Inline          -- ^ Resulting inline
-evalInlineCode attr@(_,_,opts) code =
-  let attr'  = stripRundocAttrs attr
-      rdOpts = rundocOptions opts
-  in (setCodeAttr attr' . fromInlines . resultToInlines rdOpts)
-       <$> evalCode rdOpts code
-
-evalBlock :: Attr
-          -> String
-          -> IO Block
-evalBlock attr@(_,_,opts) code =
-  let attr'  = stripRundocAttrs attr
-      rdOpts = rundocOptions opts
-  in (setBlockCodeAttr attr' . fromBlocks . inlinesToBlocks . resultToInlines rdOpts)
-       <$> evalCode rdOpts code
 
 setCodeAttr :: Attr -> Inline -> Inline
 setCodeAttr attr x =
@@ -194,8 +200,8 @@ resultToInlines opts res =
   then mempty
   else mconcat . map (`exporter` res) $ rundocExports opts
 
-fromInlines :: Inlines -> Inline
-fromInlines inlines =
+singularizeInlines :: Inlines -> Inline
+singularizeInlines inlines =
   case B.toList inlines of
     []     -> Space
     (x:[]) -> x
@@ -207,8 +213,8 @@ inlinesToBlocks = fmap inlineToBlock
 inlineToBlock :: Inline -> Block
 inlineToBlock = Para . (:[])
 
-fromBlocks :: Blocks -> Block
-fromBlocks blocks =
+singularizeBlocks :: Blocks -> Block
+singularizeBlocks blocks =
   case B.toList blocks of
     []     -> Null
     (x:[]) -> x
