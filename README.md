@@ -13,11 +13,9 @@ Blocks are marked as runable with the special class `rundoc-block`, the
 interpreter for the block is chosen via an `rundoc-language` option.  The
 following is a simple example in markdown:
 
-```markdown
-  ```{.rundoc-block rundoc-language=sh rundoc-exports=result}
-  printf 'The answer to the Ultimate Question is %d.' $((6 * 7))
-  ```
-```
+    ```{.rundoc-block rundoc-language=sh rundoc-exports=result}
+    printf 'The answer to the Ultimate Question is %d.' $((6 * 7))
+    ```
 
 Assuming the above snippet is safed in `rundoc-example.md`, then running
 
